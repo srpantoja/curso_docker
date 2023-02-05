@@ -1,0 +1,72 @@
+version: '3'
+volumes:
+  dados:
+
+networks:
+  banco:
+  web:
+  fila:
+
+services:
+  db:
+    image: postgres:9.6
+    volumes:
+      #volume dos dados
+      - dados:/var/lib/postgresql/data
+      #scripts
+      - ./scripts:/scripts
+      #setar o script a ser executado durante o ponto de entrada do container
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    environment:
+      POSTGRES_PASSWORD: "root"
+    networks:
+      - banco
+
+  frontend:
+    image: nginx:1.13
+    volumes:
+      #site
+      - ./web:/usr/share/nginx/html/
+      # configurando proxy
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    ports:
+      - 80:80
+    networks:
+      - web
+    depends_on:
+      - app
+
+  app:
+    image: python:3.6
+    volumes:
+      # aplicação
+      - ./app:/app
+    working_dir: /app
+    # app sh sem permissão
+    command: bash ./app.sh
+    networks:
+      - banco
+      - web
+      - fila
+    depends_on:
+      - db
+      - queue
+    environment:
+      - DB_NAME=email_sender
+      - DB_PASSWORD=root
+
+  queue: 
+    image: redis:3.2
+    networks:
+      - fila
+    
+  worker:
+    build: worker
+    volumes:
+      - ./worker:/worker
+    working_dir: /worker
+    command: worker.py
+    networks:
+      - fila
+    depends_on:
+      - queue
